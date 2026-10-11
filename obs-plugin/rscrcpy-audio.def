@@ -1,0 +1,22 @@
+; Explicit export list for rscrcpy-audio.dll
+;
+; GCC's EXPORT macro expands to __attribute__((visibility("default"))), which
+; does NOT add entries to the PE export table. Without this file the DLL builds
+; fine but OBS cannot find obs_module_load and silently refuses to load the
+; module ("Failed to load module").
+;
+; obs_module_load, obs_module_set_pointer and obs_module_ver are REQUIRED by
+; libobs (see libobs/obs-module.c: a missing symbol is a hard failure).
+; obs_module_unload is optional but we implement it.
+; obs_module_set_locale / obs_module_free_locale are emitted by
+; OBS_MODULE_USE_DEFAULT_LOCALE and are required for the locale .ini files to
+; be found.
+LIBRARY rscrcpy-audio
+
+EXPORTS
+    obs_module_load
+    obs_module_unload
+    obs_module_set_pointer
+    obs_module_ver
+    obs_module_set_locale
+    obs_module_free_locale

@@ -1,0 +1,16 @@
+{
+    "display_name": "Rscrcpy Audio",
+    "id": "rscrcpy-audio",
+    "version": "0.1.1",
+    "name": "rscrcpy-audio",
+    "os_arch": "win64",
+    "description": "Capture an Android device with scrcpy: picture and sound in one source.",
+    "long_description": "Receives scrcpy's video and audio directly in OBS. One source = one device, and it outputs picture and sound together with a shared clock, so A/V alignment needs a single constant offset. Give the source the same name as scrcpy's --obs-video-name / --obs-audio-name. A separate audio-only source is available for sound-only scenes, and multiple devices just use different names.",
+    "urls": {
+        "repository": "",
+        "website": "",
+        "support": ""
+    },
+    "has_banner": false,
+    "has_icon": false
+}

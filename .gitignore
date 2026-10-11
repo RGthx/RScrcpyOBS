@@ -1,0 +1,37 @@
+# ---- 构建产物 ----
+build/
+build-win64/
+/dist/
+*.obj
+*.o
+*.a
+*.exe
+*.dll
+*.pdb
+*.ilk
+*.dex
+
+# ---- 运行/联调产物（含私有画面证据，绝不入库）----
+.tmp/
+__pycache__/
+/*.png
+/*.log
+# 窗口截图（真机抓的，里面有用户自己的场景/设备信息，只当本地验证证据）
+/work/shots/
+
+# ---- 私有数据：场景集合备份 ----
+work/scenes-*.json
+
+# ---- 依赖：不入库，由 scripts/fetch-deps.ps1 从零准备 ----
+# /deps-cache/ 是下载好的原始压缩包（约 62 MB）：留着它，重跑 fetch-deps 就不必
+# 再下载；你的网络不稳时尤其值得留（删了只是下次重下）。
+/deps/
+/deps-cache/
+
+# 注意：work/scrcpy/ 是上游 scrcpy 快照，内容可信（只含源码、无产物），
+# 提交时一律用 git add -f 强制入库，不受上面 *.png / *.a 之类规则影响。
+
+/buildenv/
+/.pipcache/
+/scrcpy/
+

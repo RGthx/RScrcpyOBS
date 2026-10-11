@@ -1,0 +1,30 @@
+# Line endings and binary handling.
+#
+# The .bat wrapper MUST be checked out with CRLF: cmd.exe mis-parses the
+# parenthesised blocks in a .bat file that only has LF. Everything else stays LF
+# in the repository.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Never let git touch binaries (the release package ships DLLs and executables
+# that are copied verbatim).
+*.dll  binary
+*.exe  binary
+*.lib  binary
+*.a    binary
+*.zip  binary
+*.7z   binary
+*.png  binary
+*.ico  binary
+*.jpg  binary
+*.zst  binary
+
+# Diff hints (no behaviour change)
+*.ps1  text
+*.md   text
+*.c    text
+*.h    text
+*.cpp  text
+*.hpp  text
+*.ini  text
+*.json text
