@@ -44,6 +44,54 @@ build_map_name(const char *suffix, char *map_name, size_t len) {
     return true;
 }
 
+/*
+ * Producer exclusivity (F04), same protocol as the audio bridge: a named
+ * mutex held for the whole run. WAIT_TIMEOUT means a live producer is
+ * publishing under this name and we must refuse (sc_obs_video_sink_init
+ * failing aborts the scrcpy run, which is the intended behaviour for a
+ * duplicate --obs-video-name); WAIT_ABANDONED_0 is a dead previous owner,
+ * i.e. the legitimate reconnect case, and we re-initialize the header below.
+ */
+static bool
+acquire_producer_mutex(const char *mtx_name, HANDLE *out_mutex) {
+    HANDLE mutex = CreateMutexA(NULL, FALSE, mtx_name);
+    if (!mutex) {
+        LOGE("OBS video: could not create producer mutex %s (error %lu)",
+             mtx_name, GetLastError());
+        return false;
+    }
+
+    DWORD r = WaitForSingleObject(mutex, 0);
+    if (r == WAIT_OBJECT_0 || r == WAIT_ABANDONED_0) {
+        if (r == WAIT_ABANDONED_0) {
+            LOGW("OBS video: previous producer of %s died without cleanup, "
+                 "taking over the section", mtx_name);
+        }
+        *out_mutex = mutex;
+        return true;
+    }
+
+    if (r == WAIT_TIMEOUT) {
+        LOGE("OBS video: another producer is already publishing to this "
+             "section (%s): refusing to take over a live producer. Use a "
+             "different --obs-video-name or stop the other scrcpy first.",
+             mtx_name);
+    } else {
+        LOGE("OBS video: could not acquire producer mutex %s (wait returned "
+             "%lu, error %lu)", mtx_name, r, GetLastError());
+    }
+    CloseHandle(mutex);
+    return false;
+}
+
+static void
+release_producer_mutex(HANDLE mutex) {
+    if (mutex) {
+        ReleaseMutex(mutex);
+        CloseHandle(mutex);
+    }
+}
+
 static void
 log_frame_shape(const AVFrame *frame) {
     const char *fmt_name = av_get_pix_fmt_name(frame->format);
@@ -609,6 +657,19 @@ sc_obs_video_sink_init(struct sc_obs_video_sink *ovs, void *d3d11_device,
         return false;
     }
 
+    // Single-owner guarantee: take the producer mutex before touching the
+    // section (see acquire_producer_mutex above). Held until destroy().
+    char mtx_name[SC_OBS_VIDEO_NAME_MAX + 64];
+    int mr = snprintf(mtx_name, sizeof(mtx_name), "%s_mtx", map_name);
+    if (mr < 0 || (size_t) mr >= sizeof(mtx_name)) {
+        LOGE("OBS video: invalid mutex name: %s", map_name);
+        return false;
+    }
+    HANDLE producer_mutex = INVALID_HANDLE_VALUE;
+    if (!acquire_producer_mutex(mtx_name, &producer_mutex)) {
+        return false;
+    }
+
     uint32_t hdr_size = (uint32_t) sizeof(struct sc_obs_video_header);
     // GPU path only: the section holds the header and nothing else (the pixels
     // live in the shared textures). A named section is committed as soon as it
@@ -622,6 +683,7 @@ sc_obs_video_sink_init(struct sc_obs_video_sink *ovs, void *d3d11_device,
     if (!mapping) {
         LOGE("OBS video: could not create shared memory %s (error %lu)",
              map_name, GetLastError());
+        release_producer_mutex(producer_mutex);
         return false;
     }
 
@@ -632,6 +694,7 @@ sc_obs_video_sink_init(struct sc_obs_video_sink *ovs, void *d3d11_device,
         LOGE("OBS video: could not map shared memory %s (error %lu)",
              map_name, GetLastError());
         CloseHandle(mapping);
+        release_producer_mutex(producer_mutex);
         return false;
     }
 
@@ -642,6 +705,7 @@ sc_obs_video_sink_init(struct sc_obs_video_sink *ovs, void *d3d11_device,
         LOGE("OBS video: existing section %s has an unexpected size", map_name);
         UnmapViewOfFile(base);
         CloseHandle(mapping);
+        release_producer_mutex(producer_mutex);
         return false;
     }
 
@@ -670,6 +734,7 @@ sc_obs_video_sink_init(struct sc_obs_video_sink *ovs, void *d3d11_device,
     atomic_thread_fence(memory_order_release);
     hdr->magic = SC_OBS_VIDEO_MAGIC;
 
+    ovs->producer_mutex = producer_mutex;
     ovs->mapping = mapping;
     ovs->base = base;
     ovs->hdr = hdr;
@@ -678,6 +743,8 @@ sc_obs_video_sink_init(struct sc_obs_video_sink *ovs, void *d3d11_device,
         hdr->magic = 0;
         UnmapViewOfFile(base);
         CloseHandle(mapping);
+        release_producer_mutex(producer_mutex);
+        ovs->producer_mutex = NULL;
         ovs->mapping = NULL;
         ovs->base = NULL;
         ovs->hdr = NULL;
@@ -689,6 +756,8 @@ sc_obs_video_sink_init(struct sc_obs_video_sink *ovs, void *d3d11_device,
         hdr->magic = 0;
         UnmapViewOfFile(base);
         CloseHandle(mapping);
+        release_producer_mutex(producer_mutex);
+        ovs->producer_mutex = NULL;
         ovs->mapping = NULL;
         ovs->base = NULL;
         ovs->hdr = NULL;
@@ -701,6 +770,8 @@ sc_obs_video_sink_init(struct sc_obs_video_sink *ovs, void *d3d11_device,
         hdr->magic = 0;
         UnmapViewOfFile(base);
         CloseHandle(mapping);
+        release_producer_mutex(producer_mutex);
+        ovs->producer_mutex = NULL;
         ovs->mapping = NULL;
         ovs->base = NULL;
         ovs->hdr = NULL;
@@ -740,6 +811,10 @@ sc_obs_video_sink_destroy(struct sc_obs_video_sink *ovs) {
         ovs->mapping = NULL;
     }
     ovs->hdr = NULL;
+
+    // Release the producer mutex last: until here we still own the section
+    release_producer_mutex((HANDLE) ovs->producer_mutex);
+    ovs->producer_mutex = NULL;
 
     sc_frame_buffer_destroy(&ovs->fb);
     sc_cond_destroy(&ovs->cond);

@@ -111,7 +111,7 @@ Or copy the two paths by hand:
 Nothing else is installed, and your scenes and sources are not touched.
 
 Check: restart OBS; the log shows
-  [rscrcpy-audio] module loaded: version 0.1.1
+  [rscrcpy-audio] module loaded: version 0.1.2
 and the source list offers "scrcpy Capture (rscrcpy_capture)" and
 "scrcpy Audio (rscrcpy-audio)".
 
@@ -232,7 +232,7 @@ OBS 源里填同一个名字。
 不装别的东西，也不碰你的场景和源。
 
 确认装上：重启 OBS，日志里会显示
-  [rscrcpy-audio] module loaded: version 0.1.1
+  [rscrcpy-audio] module loaded: version 0.1.2
 来源列表里能看到 "scrcpy 采集 (rscrcpy_capture)" 与 "scrcpy 音频 (rscrcpy-audio)"。
 
   powershell -ExecutionPolicy Bypass -File scripts\uninstall-plugin.ps1

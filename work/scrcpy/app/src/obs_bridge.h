@@ -19,6 +19,7 @@
  * resolution changes.
  */
 struct sc_obs_bridge {
+    void *mutex; // HANDLE, named producer-exclusivity mutex, held until destroy
     void *mapping; // HANDLE (void* to keep windows.h out of this header)
     void *event; // HANDLE
     uint8_t *base; // mapped view

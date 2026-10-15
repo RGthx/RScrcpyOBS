@@ -174,7 +174,8 @@ sc_obs_video_gpu_release_device(void *d3d11_device) {
     }
 }
 
-// Best-effort: log which DXGI adapter a device belongs to, and return its LUID.static bool
+// Best-effort: log which DXGI adapter a device belongs to, and return its LUID.
+static bool
 device_adapter_info(ID3D11Device *device, char *name, size_t name_len,
                     uint32_t *luid_low, int32_t *luid_high) {
     IDXGIDevice *dxgi_device = nullptr;

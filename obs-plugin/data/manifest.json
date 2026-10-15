@@ -1,7 +1,7 @@
 {
     "display_name": "Rscrcpy Audio",
     "id": "rscrcpy-audio",
-    "version": "0.1.1",
+    "version": "0.1.2",
     "name": "rscrcpy-audio",
     "os_arch": "win64",
     "description": "Capture an Android device with scrcpy: picture and sound in one source.",

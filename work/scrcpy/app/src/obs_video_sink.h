@@ -50,6 +50,7 @@ struct sc_obs_video_sink {
 
     // Section and its header (created once for the whole run, like the audio
     // bridge, so the plugin keeps a valid handle across reconnects)
+    void *producer_mutex; // HANDLE, named producer-exclusivity mutex, held until destroy
     void *mapping; // HANDLE
     uint8_t *base; // mapped view
     struct sc_obs_video_header *hdr;

@@ -178,6 +178,39 @@ foreach ($f in 'LICENSE', 'NOTICE.md') {
 }
 Copy-Item (Join-Path $Repo 'LICENSE-scrcpy.txt') (Join-Path $pkg 'LICENSE-scrcpy.txt') -Force
 
+# ---------------------------------------------------------------- completeness
+# F07: deploy-runtime-dlls.ps1 only *warns* about missing companions (it is
+# also a dev tool), so a package without adb/scrcpy-server could still pass
+# the --version smoke test below and ship broken (scrcpy.exe --version does
+# not touch adb or the server). The release must be self-contained: every
+# file it needs at run time has to be present in the folder.
+$required = @(
+    'scrcpy\scrcpy.exe',
+    'scrcpy\scrcpy-server',
+    'scrcpy\adb.exe',
+    'scrcpy\AdbWinApi.dll',
+    'scrcpy\AdbWinUsbApi.dll',
+    'scrcpy\scrcpy-obs.bat',
+    'obs-plugin\build\rscrcpy-audio.dll',
+    'obs-plugin\data\manifest.json',
+    'obs-plugin\data\locale\en-US.ini',
+    'obs-plugin\data\locale\zh-CN.ini',
+    'scripts\install-plugin.ps1',
+    'scripts\uninstall-plugin.ps1',
+    'README.txt',
+    'LICENSE',
+    'LICENSE-scrcpy.txt',
+    'NOTICE.md'
+)
+$missingPkg = @($required | Where-Object { -not (Test-Path (Join-Path $pkg $_)) })
+if ($missingPkg.Count -gt 0) {
+    throw ((@("incomplete package: missing required file(s) -- a release must be self-contained:") +
+            ($missingPkg | ForEach-Object { "  $_" }) +
+            @("", "deploy-runtime-dlls.ps1 only warns about missing companions (it is also a dev tool);",
+              "check its warnings above -- usually adb or scrcpy-server is not built/downloaded.")) -join "`n")
+}
+Say "package completeness OK ($($required.Count) required files present)"
+
 # ---------------------------------------------------------------- smoke test
 # Running the packaged exe is the only way to know the DLL set is complete
 # (a missing one is 0xC0000135 at load, which is silent in a folder listing).

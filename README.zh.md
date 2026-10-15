@@ -118,7 +118,7 @@ obs-plugin\data\*                   ->  <OBS>\data\obs-plugins\rscrcpy-audio\
 
 不装别的东西，也不碰你的场景和源。
 
-确认装上：重启 OBS，日志里会显示 `[rscrcpy-audio] module loaded: version 0.1.1`，来源列表里
+确认装上：重启 OBS，日志里会显示 `[rscrcpy-audio] module loaded: version 0.1.2`，来源列表里
 能看到 **scrcpy 采集 (rscrcpy_capture)** 与 **scrcpy 音频 (rscrcpy-audio)**。
 
 卸载：

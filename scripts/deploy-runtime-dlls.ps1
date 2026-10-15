@@ -43,7 +43,13 @@ if (-not $objdump) { throw 'objdump not found (source build_env.ps1 first)' }
 $objdumpExe = if ($objdump.Source) { $objdump.Source } else { $objdump.FullName }
 
 function Get-Imports([string] $file) {
-    @(& $objdumpExe -p $file 2>$null |
+    $imports = & $objdumpExe -p $file 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        # A failed read must not look like "no imports" (F08): that would
+        # silently hide a whole dependency subtree.
+        throw "objdump could not read '$file' (exit $LASTEXITCODE) -- the dependency walk cannot continue"
+    }
+    @($imports |
       Select-String -Pattern 'DLL Name:\s*(\S+)' |
       ForEach-Object { $_.Matches[0].Groups[1].Value } | Sort-Object -Unique)
 }
@@ -75,12 +81,16 @@ while ($queue.Count -gt 0) {
         if (-not $src) { $missing += $dll; continue }
         if ($WhatIf) {
             Write-Host ("[runtime] would copy {0}  <- {1}" -f $dll, $src)
+            # Walk the file that WOULD be copied, not the destination:
+            # under -WhatIf nothing is copied, so $destPath does not exist
+            # and enqueueing it made the walk miss its indirect imports (F08).
+            $queue.Enqueue($src)
         } else {
             Copy-Item $src $destPath -Force
             Write-Host ("[runtime] copied {0}" -f $dll)
+            $queue.Enqueue($destPath)
         }
         $copied++
-        $queue.Enqueue($destPath)
     }
 }
 

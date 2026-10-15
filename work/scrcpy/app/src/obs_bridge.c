@@ -18,6 +18,66 @@
 
 // Offsets/geometry helpers -------------------------------------------------
 
+/*
+ * Producer exclusivity (F04): the section name is user-chosen, so two scrcpy
+ * instances started with the same --obs-audio-name would both create/open the
+ * same section and the second one would memset the header the first one is
+ * publishing through. A named mutex, held for the whole run, gives the section
+ * a single owner:
+ *
+ *   - CreateMutex + WaitForSingleObject(0): WAIT_OBJECT_0 means nobody else
+ *     holds it (fresh, or the previous owner exited cleanly);
+ *   - WAIT_ABANDONED_0 means the previous owner died without releasing:
+ *     we get ownership, which is exactly the "take over a dead session"
+ *     case, and the header is re-initialized below;
+ *   - WAIT_TIMEOUT means a live producer holds the section: refuse.
+ *
+ * Checking only a pid in the header would race (the other instance could
+ * take the section between the check and the memset); holding the mutex
+ * from before the first byte is touched until destroy removes the race.
+ */
+static bool
+acquire_producer_mutex(const char *mtx_name, HANDLE *out_mutex) {
+    HANDLE mutex = CreateMutexA(NULL, FALSE, mtx_name);
+    if (!mutex) {
+        LOGE("OBS bridge: could not create producer mutex %s (error %lu)",
+             mtx_name, GetLastError());
+        return false;
+    }
+
+    DWORD r = WaitForSingleObject(mutex, 0);
+    if (r == WAIT_OBJECT_0 || r == WAIT_ABANDONED_0) {
+        // Owned (fresh or abandoned: a dead owner's section is re-initialized
+        // below, so the consumer cannot mix old-session data into ours)
+        if (r == WAIT_ABANDONED_0) {
+            LOGW("OBS bridge: previous producer of %s died without cleanup, "
+                 "taking over the section", mtx_name);
+        }
+        *out_mutex = mutex;
+        return true;
+    }
+
+    if (r == WAIT_TIMEOUT) {
+        LOGE("OBS bridge: another producer is already publishing to this "
+             "section (%s): refusing to take over a live producer. Use a "
+             "different --obs-audio-name or stop the other scrcpy first.",
+             mtx_name);
+    } else {
+        LOGE("OBS bridge: could not acquire producer mutex %s (wait returned "
+             "%lu, error %lu)", mtx_name, r, GetLastError());
+    }
+    CloseHandle(mutex);
+    return false;
+}
+
+static void
+release_producer_mutex(HANDLE mutex) {
+    if (mutex) {
+        ReleaseMutex(mutex);
+        CloseHandle(mutex);
+    }
+}
+
 static inline size_t
 slot_stride(const struct sc_obs_bridge *bridge) {
     return bridge->slot_stride;
@@ -39,7 +99,8 @@ slot_data(struct sc_obs_bridge *bridge, uint32_t index) {
 // Implementation -----------------------------------------------------------
 
 static bool
-build_names(const char *suffix, char *map_name, char *evt_name) {
+build_names(const char *suffix, char *map_name, char *evt_name,
+             char *mtx_name) {
     const char *s = suffix && *suffix ? suffix : "0";
 
     int r = snprintf(map_name, SC_OBS_BRIDGE_NAME_MAX, "%s%s",
@@ -56,6 +117,13 @@ build_names(const char *suffix, char *map_name, char *evt_name) {
         return false;
     }
 
+    r = snprintf(mtx_name, SC_OBS_BRIDGE_NAME_MAX, "%s%s_mtx",
+                 SC_OBS_SHM_NAME_PREFIX, s);
+    if (r < 0 || r >= SC_OBS_BRIDGE_NAME_MAX) {
+        LOGE("OBS bridge: invalid mutex name: %s", s);
+        return false;
+    }
+
     return true;
 }
 
@@ -65,7 +133,15 @@ sc_obs_bridge_init(struct sc_obs_bridge *bridge, const char *name) {
 
     char map_name[SC_OBS_BRIDGE_NAME_MAX];
     char evt_name[SC_OBS_BRIDGE_NAME_MAX];
-    if (!build_names(name, map_name, evt_name)) {
+    char mtx_name[SC_OBS_BRIDGE_NAME_MAX];
+    if (!build_names(name, map_name, evt_name, mtx_name)) {
+        return false;
+    }
+
+    // Single-owner guarantee: take the producer mutex before touching the
+    // section (see acquire_producer_mutex above). Held until destroy().
+    HANDLE mutex = INVALID_HANDLE_VALUE;
+    if (!acquire_producer_mutex(mtx_name, &mutex)) {
         return false;
     }
 
@@ -87,6 +163,7 @@ sc_obs_bridge_init(struct sc_obs_bridge *bridge, const char *name) {
     if (!event) {
         LOGE("OBS bridge: could not create event %s (error %lu)",
              evt_name, GetLastError());
+        release_producer_mutex(mutex);
         return false;
     }
 
@@ -98,6 +175,7 @@ sc_obs_bridge_init(struct sc_obs_bridge *bridge, const char *name) {
         LOGE("OBS bridge: could not create shared memory %s (error %lu)",
              map_name, GetLastError());
         CloseHandle(event);
+        release_producer_mutex(mutex);
         return false;
     }
 
@@ -109,6 +187,7 @@ sc_obs_bridge_init(struct sc_obs_bridge *bridge, const char *name) {
              map_name, GetLastError());
         CloseHandle(mapping);
         CloseHandle(event);
+        release_producer_mutex(mutex);
         return false;
     }
 
@@ -120,6 +199,7 @@ sc_obs_bridge_init(struct sc_obs_bridge *bridge, const char *name) {
         UnmapViewOfFile(base);
         CloseHandle(mapping);
         CloseHandle(event);
+        release_producer_mutex(mutex);
         return false;
     }
 
@@ -150,6 +230,7 @@ sc_obs_bridge_init(struct sc_obs_bridge *bridge, const char *name) {
     atomic_thread_fence(memory_order_release);
     hdr->magic = SC_OBS_SHM_MAGIC;
 
+    bridge->mutex = mutex;
     bridge->mapping = mapping;
     bridge->event = event;
     bridge->base = base;
@@ -178,6 +259,7 @@ sc_obs_bridge_destroy(struct sc_obs_bridge *bridge) {
     UnmapViewOfFile(bridge->base);
     CloseHandle((HANDLE) bridge->mapping);
     CloseHandle((HANDLE) bridge->event);
+    release_producer_mutex((HANDLE) bridge->mutex);
 
     LOGI("OBS bridge: closed (packets=%" PRIu64 ", overrun=%" PRIu32 ")",
          packets, overrun);

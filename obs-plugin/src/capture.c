@@ -124,6 +124,10 @@ struct rscrcpy_capture {
     bool gone_logged;
     bool released;
     uint64_t last_connect_ms;
+    // While RELEASED with the reader still connected: last slow probe, so
+    // the released state really probes at RELEASED_POLL_MS instead of
+    // snapshotting the header on every rendered frame
+    uint64_t last_probe_ms;
 
     // Adapter identity: zero-copy sharing only works on the same adapter, so a
     // mismatch is reported loudly instead of showing a black picture for ever.
@@ -662,6 +666,18 @@ capture_tick(void *data, float seconds) {
         ctx->logged_generation = 0;
     }
 
+    // While RELEASED the reader stays connected (that is how a returning
+    // producer is noticed), so the !connected poll above does not throttle
+    // us: probe at the released rate instead, otherwise the released state
+    // would still snapshot the header on every rendered frame for nothing.
+    if (ctx->released) {
+        if (now - ctx->last_probe_ms < RELEASED_POLL_MS) {
+            ctx->draw_slot = -1;
+            return;
+        }
+        ctx->last_probe_ms = now;
+    }
+
     struct sc_obs_video_snapshot snap;
     if (!sc_obs_video_reader_snapshot(&ctx->reader, &snap)) {
         if (sc_obs_video_reader_is_alive(&ctx->reader)) {
@@ -719,8 +735,14 @@ capture_tick(void *data, float seconds) {
     }
 
     // --- (re)open the textures when the generation changed ------------------
+    // While RELEASED the textures must stay released: the !tex_open test
+    // below cannot tell "first frame" from "we released everything and the
+    // producer is still silent", so without this it would reopen (and keep)
+    // the textures on every probe. Only an actual new frame is a recovery
+    // signal; a new session has already cleared `released` above.
     bool ready = snap.format != SC_OBS_VIDEO_FORMAT_NONE
-              && snap.video_header_seq != 0 && handles_usable(&snap);
+              && snap.video_header_seq != 0 && handles_usable(&snap)
+              && (!ctx->released || snap.frame_seq != ctx->last_frame_seq);
     if (ready) {
         bool changed = !ctx->tex_open
                     || ctx->tex_header_seq != snap.video_header_seq

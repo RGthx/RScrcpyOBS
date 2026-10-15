@@ -182,9 +182,16 @@ function Get-Archive([string] $Url, [string] $FileName) {
     $hash = Get-Sha256 $dst
     $pinned = $lock[$FileName]
     if ($pinned -and ($pinned -ne $hash)) {
-        throw ("$FileName does not match scripts\deps.lock.json`n" +
-               "  expected $pinned`n  actual   $hash`n" +
-               "Upstream changed the file: do NOT silently accept it. Review, then -UpdateLock.")
+        if ($UpdateLock) {
+            # F09: -UpdateLock is the documented "I reviewed the new file,
+            # record its hash" path: report old -> new and fall through to
+            # $lockedNow below, so the lock file is actually updated.
+            Say ("hash changed for {0}: {1} -> {2} (updating scripts\deps.lock.json)" -f $FileName, $pinned, $hash)
+        } else {
+            throw ("$FileName does not match scripts\deps.lock.json`n" +
+                   "  expected $pinned`n  actual   $hash`n" +
+                   "Upstream changed the file: do NOT silently accept it. Review, then re-run with -UpdateLock.")
+        }
     }
     if (-not $pinned) {
         Say "unpinned $FileName -> $hash"

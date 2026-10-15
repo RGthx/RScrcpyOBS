@@ -126,7 +126,7 @@ obs-plugin\data\*                   ->  <OBS>\data\obs-plugins\rscrcpy-audio\
 
 Nothing else is installed, and your scenes and sources are not touched.
 
-Check: restart OBS; the log shows `[rscrcpy-audio] module loaded: version 0.1.1`, and the
+Check: restart OBS; the log shows `[rscrcpy-audio] module loaded: version 0.1.2`, and the
 source list offers **scrcpy Capture (rscrcpy_capture)** and **scrcpy Audio (rscrcpy-audio)**.
 
 Uninstall:

@@ -20,7 +20,7 @@
 #include "shm_reader.h"
 
 #define PLUGIN_NAME "rscrcpy-audio"
-#define PLUGIN_VERSION "0.1.1"
+#define PLUGIN_VERSION "0.1.2"
 #define PLUGIN_LOG_PREFIX "[" PLUGIN_NAME "] "
 
 /* rscrcpy_capture: the merged source fed by scrcpy's shared textures
